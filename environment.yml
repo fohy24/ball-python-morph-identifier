@@ -1,0 +1,20 @@
+name: deep-learning
+channels:
+ - conda-forge
+ - defaults
+dependencies:
+  - python==3.11.6
+  - pandas==2.1.*
+  - numpy==1.26.*
+  - pyarrow==14.0.*
+  - scikit-learn==1.4.2
+  - matplotlib
+  - altair
+  - pillow==10.3.*
+  - gcsfs==2024.3.1
+  - gsutil==5.27
+  - ipykernel
+
+# Run these in terminal
+# conda install pytorch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia
+# pip install torchinfo
