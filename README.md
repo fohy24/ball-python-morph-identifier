@@ -32,6 +32,14 @@ conda create -f environment.yml
 
 Make inference using the `inference.ipynb`. See documentations in the notebook for detail instructions.
 
+Example 1:
+
+![Screenshot 2024-05-06 201408](https://github.com/user-attachments/assets/3dfa96cf-76aa-4d52-a401-87ba19f11b72)  
+  
+Example 2:
+
+![Screenshot 2024-05-06 201803](https://github.com/user-attachments/assets/69b3ab03-da4c-4330-a646-d1ae3ddeaabd)
+
 
 ## Contributing
 
