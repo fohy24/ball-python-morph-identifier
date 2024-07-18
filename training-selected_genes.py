@@ -8,6 +8,8 @@ from torch import nn, optim
 from torchvision import datasets, utils, models
 # from torchinfo import summary
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, ExponentialLR
+import torch.optim as optim
 from torchvision.transforms import v2
 import multiprocessing
 
@@ -29,17 +31,17 @@ torch.backends.cudnn.allow_tf32 = True
 #########################################################################
 
 SUBSET = False
-IMAGE_SIZE = 256
-BATCH_SIZE = 256
-LEARNING_RATE = 0.0002
+IMAGE_SIZE = 512
+BATCH_SIZE = 32
+LEARNING_RATE = 0.00005
 
 LOAD_CHECKPOINT = False
 checkpoint_version = 1
 checkpoint_epoch = 20
-num_additional_epochs = 30
+num_additional_epochs = 15
 
-SAVE_CHECKPOINT = False
-SAVE_AS_VERSION = 6
+SAVE_CHECKPOINT = True
+SAVE_AS_VERSION = 8
 
 #########################################################################
 
@@ -111,14 +113,14 @@ valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False,
 densenet = models.densenet201(weights='DenseNet201_Weights.DEFAULT')
 
 for param in densenet.parameters():  # Freeze parameters so we don't update them
-    param.requires_grad = False
+    param.requires_grad = True
 
-for name, child in densenet.named_children():
-    if name == 'features':
-        for child_name, parameters in child.named_children():
-            if 'denseblock2' in child_name or 'denseblock3' in child_name or 'denseblock4' in child_name:
-                for param in parameters.parameters():
-                    param.requires_grad = True
+# for name, child in densenet.named_children():
+#     if name == 'features':
+#         for child_name, parameters in child.named_children():
+#             if 'denseblock2' in child_name or 'denseblock3' in child_name or 'denseblock4' in child_name:
+#                 for param in parameters.parameters():
+#                     param.requires_grad = True
 
 
 
@@ -164,39 +166,11 @@ criterion = focal_loss
 
 # criterion = nn.BCEWithLogitsLoss()
 optimizer = torch.optim.Adam(densenet.parameters(), lr=LEARNING_RATE)
+# scheduler = ExponentialLR(optimizer, gamma=0.7)
+scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=num_additional_epochs)
+
 
 def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=1, save_checkpoint=True):
-    """
-    Train a model with specified criterion and optimizer. 
-
-    Parameters:
-    - model (torch.nn.Module): The neural network model to be trained.
-    - criterion (torch.nn.Module): The loss function used for the training.
-    - optimizer (torch.optim.Optimizer): The optimizer used for parameter updates.
-    - start_epoch (int): The starting epoch number for training. Useful for resuming training. Set to 1 if starting from scratch.
-    - total_epochs (int): The total number of epochs to train the model for.
-    - version (int, optional): Version number of the model checkpoint files. Default is 1. Recommend to specify when save_checkpoint=True.
-    - save_checkpoint (bool, optional): Flag to control whether to save checkpoints after each epoch. Default is True.
-
-    Outputs:
-    - The function does not return any values but prints training and validation loss after each epoch and saves model checkpoints if specified.
-
-    Example:
-    ```
-    # Assuming criterion and optimizer are predefined, this will train the densenet model for 10 epochs, starting from epoch 21.
-    # This is useful when you have checkpoint models up until epoch 20.
-    # Checkpoints will be saved and named as version 2.
-    train_model(densenet, criterion, optimizer,
-            start_epoch=21,
-            total_epochs=30,
-            version=2,
-            save_checkpoint=True)
-    ```
-
-    Note:
-    - Ensure that the device (CPU or GPU) is appropriately set for the model, criterion, and data tensors.
-    - The global variables BATCH_SIZE, IMAGE_SIZE, train_loader, and valid_loader are used within this function and should be defined in the scope where this function is called.
-    """
     print(f'Start training - batch size: {BATCH_SIZE} & image size: {IMAGE_SIZE}')
     
     for epoch in range(start_epoch, total_epochs + 1):
@@ -235,6 +209,7 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
 
             # Calculate average loss over validation data
             valid_loss = valid_loss / len(valid_loader.dataset)
+            scheduler.step()
 
             # Checkpoint
             if save_checkpoint:
@@ -250,7 +225,7 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                     }, CHECKPOINT_PATH)
 
             # Print training/validation statistics
-            print(f'Epoch {epoch}/{total_epochs}, Train Loss: {train_loss:.5f}, Valid Loss: {valid_loss:.5f}')
+            print(f'Epoch {epoch}/{total_epochs}, Train Loss: {train_loss:.5f}, Valid Loss: {valid_loss:.5f}, Learning rate: {scheduler.get_last_lr()}')
             tepoch.set_postfix(train_loss=train_loss,
                                valid_loss=valid_loss)
 
@@ -285,23 +260,23 @@ train_model(densenet, criterion, optimizer,
             version=SAVE_AS_VERSION,
             save_checkpoint=SAVE_CHECKPOINT)
 
-# Loss on test set
-test_dataset = PythonGeneDataset(labels_df=test_df, img_dir='data/img/', transform=transform)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+# # Loss on test set
+# test_dataset = PythonGeneDataset(labels_df=test_df, img_dir='data/img/', transform=transform)
+# test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-densenet.eval()  # Set model to evaluate mode
+# densenet.eval()  # Set model to evaluate mode
 
-test_loss = 0.0
-with torch.no_grad():
-    for inputs, labels in test_loader:
-        inputs, labels = inputs.to(device), labels.to(device)
+# test_loss = 0.0
+# with torch.no_grad():
+#     for inputs, labels in test_loader:
+#         inputs, labels = inputs.to(device), labels.to(device)
 
-        outputs = densenet(inputs)
-        loss = criterion(outputs, labels)
-        test_loss += loss.item() * inputs.size(0)
+#         outputs = densenet(inputs)
+#         loss = criterion(outputs, labels)
+#         test_loss += loss.item() * inputs.size(0)
 
-# Calculate average loss over validation data
-test_loss = test_loss / len(test_loader.dataset)
-print(f'Loss on Test set: {test_loss:.5f}')
+# # Calculate average loss over validation data
+# test_loss = test_loss / len(test_loader.dataset)
+# print(f'Loss on Test set: {test_loss:.5f}')
 
 
