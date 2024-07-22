@@ -30,15 +30,7 @@ conda create -f environment.yml
 
 ## Usage
 
-Make inference using the `inference.ipynb`. See documentations in the notebook for detail instructions.
-
-Example 1:
-
-![Screenshot 2024-05-06 201408](https://github.com/user-attachments/assets/3dfa96cf-76aa-4d52-a401-87ba19f11b72)  
-  
-Example 2:
-
-![Screenshot 2024-05-06 201803](https://github.com/user-attachments/assets/69b3ab03-da4c-4330-a646-d1ae3ddeaabd)
+Upload images in the web app hosted on Hugging Face: [https://huggingface.co/spaces/fohy24/ball-python-morph-identifier](https://huggingface.co/spaces/fohy24/ball-python-morph-identifier)
 
 
 ## Contributing
@@ -59,4 +51,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Sam Fo - [fohoyin@gmail.com](mailto:fohoyin@gmail.com)
 
-Project Link: [[https://github.com/fohy24/morphmarket](https://github.com/fohy24/morphmarket)](https://github.com/fohy24/morphmarket)
+Project Link: [https://github.com/fohy24/morphmarket](https://github.com/fohy24/morphmarket)
