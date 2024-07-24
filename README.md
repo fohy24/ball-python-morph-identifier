@@ -32,6 +32,8 @@ conda create -f environment.yml
 
 Upload images in the web app hosted on Hugging Face: [https://huggingface.co/spaces/fohy24/ball-python-morph-identifier](https://huggingface.co/spaces/fohy24/ball-python-morph-identifier)
 
+**The 20 identifiable morphs:**  
+Pastel, Yellow Belly, Enchi, Clown, Leopard, Piebald, Orange Dream, Fire, Mojave, Pinstripe, Banana, Normal, Black Pastel, Lesser, Spotnose, Cinnamon, GHI, Hypo, Spider, Super Pastel  
 
 ## Contributing
 
