@@ -45,7 +45,6 @@ SAVE_AS_VERSION = 9
 
 #########################################################################
 
-# Change csv name as needed
 labels_extended = pd.read_csv('data/selected_gene_df.csv')
 
 if SUBSET:
@@ -87,23 +86,23 @@ transform = v2.Compose([
     v2.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     v2.RandomHorizontalFlip(p=0.5),
     v2.RandomVerticalFlip(p=0.5),
-    v2.ToDtype(torch.float32, scale=True), # Normalize expects float input
+    v2.ToDtype(torch.float32, scale=True),
     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
 full_dataset = PythonGeneDataset(labels_df=train_df, img_dir='data/img/', transform=transform)
 
-# Split dataset
+
 total_size = len(full_dataset)
 train_size = int(0.8 * total_size)
 valid_size = total_size - train_size
 train_indices, valid_indices = torch.utils.data.random_split(np.arange(total_size), [train_size, valid_size])
 
-# Create train and validation datasets
+
 train_dataset = Subset(full_dataset, train_indices)
 valid_dataset = Subset(full_dataset, valid_indices)
 
-# Initialize DataLoaders
+
 print(f'Number of workers: {multiprocessing.cpu_count()}')
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
                           num_workers=multiprocessing.cpu_count(), pin_memory=True)
@@ -112,7 +111,7 @@ valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False,
 
 efficientnet = models.efficientnet_v2_l(weights='EfficientNet_V2_L_Weights.DEFAULT')
 
-for param in efficientnet.parameters():  # Freeze parameters so we don't update them
+for param in efficientnet.parameters():
     param.requires_grad = True
 
 # for name, child in efficientnet.named_children():
@@ -128,11 +127,11 @@ num_labels = len(clean_possible_genes)
 print(f'Number of labels: {num_labels}')
 
 new_layers = nn.Sequential(
-    nn.LazyLinear(1280),  # Reduce dimension from 1024 to 500
-    nn.BatchNorm1d(1280),   # Normalize the activations from the previous layer
-    nn.ReLU(),             # Non-linear activation function
-    nn.Dropout(0.5),       # Dropout for regularization (50% probability)
-    nn.LazyLinear(num_labels)  # Final layer for class predictions
+    nn.LazyLinear(1280),  
+    nn.BatchNorm1d(1280),  
+    nn.ReLU(),            
+    nn.Dropout(0.5),      
+    nn.LazyLinear(num_labels) 
 )
 efficientnet.classifier = new_layers
 
@@ -146,7 +145,7 @@ class FocalLoss(nn.Module):
     
     def forward(self, inputs, targets):
         BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
-        pt = torch.exp(-BCE_loss)  # Prevents nans when probability is 0
+        pt = torch.exp(-BCE_loss) 
         F_loss = self.alpha * (1-pt)**self.gamma * BCE_loss
         
         if self.reduction == 'mean':
@@ -174,7 +173,7 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
     print(f'Start training - batch size: {BATCH_SIZE} & image size: {IMAGE_SIZE}')
     
     for epoch in range(start_epoch, total_epochs + 1):
-        model.train()  # Set model to training mode
+        model.train()
 
         with tqdm(train_loader, unit="batch") as tepoch:
             train_loss = 0.0
@@ -182,22 +181,21 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                 tepoch.set_description(f"Epoch {epoch}/{total_epochs}")
                 inputs, labels = inputs.to(device), labels.to(device)
                 
-                # Forward pass
+                # forward pass
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
 
-                # Backward and optimize
+                # backward 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
                 train_loss += loss.item() * inputs.size(0)
 
-            # Calculate average loss for the epoch
             train_loss = train_loss / len(train_loader.dataset)
 
-            # Validation of the model
-            model.eval()  # Set model to evaluate mode
+            # Validation
+            model.eval() 
             valid_loss = 0.0
             with torch.no_grad():
                 for inputs, labels in valid_loader:
@@ -207,11 +205,10 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                     loss = criterion(outputs, labels)
                     valid_loss += loss.item() * inputs.size(0)
 
-            # Calculate average loss over validation data
             valid_loss = valid_loss / len(valid_loader.dataset)
             scheduler.step()
 
-            # Checkpoint
+            # Save model
             if save_checkpoint:
                 CHECKPOINT_PATH = f'model/model_v{version}_epoch{epoch}.pt'
                 torch.save({
@@ -224,7 +221,6 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                     'valid_loss': valid_loss,
                     }, CHECKPOINT_PATH)
 
-            # Print training/validation statistics
             print(f'Epoch {epoch}/{total_epochs}, Train Loss: {train_loss:.5f}, Valid Loss: {valid_loss:.5f}, Learning rate: {scheduler.get_last_lr()}')
             tepoch.set_postfix(train_loss=train_loss,
                                valid_loss=valid_loss)
