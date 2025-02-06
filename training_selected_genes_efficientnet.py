@@ -32,7 +32,7 @@ torch.backends.cudnn.allow_tf32 = True
 
 SUBSET = False
 IMAGE_SIZE = 480
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 LEARNING_RATE = 0.00005
 
 LOAD_CHECKPOINT = False
@@ -41,7 +41,7 @@ checkpoint_epoch = 20
 num_additional_epochs = 20
 
 SAVE_CHECKPOINT = True
-SAVE_AS_VERSION = 9
+SAVE_AS_VERSION = 10
 
 #########################################################################
 
@@ -71,7 +71,6 @@ class PythonGeneDataset(Dataset):
     def __getitem__(self, idx):
         img_name = os.path.join(self.img_dir, f"{self.labels_df.iloc[idx, 0]}.png")
         image = Image.open(img_name)
-        # Parse labels here based on your CSV structure and required format
         labels = torch.tensor(self.labels_df.iloc[idx, 7:].astype('float32').values)
         
         if self.transform:
@@ -80,13 +79,12 @@ class PythonGeneDataset(Dataset):
         return image, labels
 
 
-
 transform = v2.Compose([
     v2.ToImage(),
     v2.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     v2.RandomHorizontalFlip(p=0.5),
     v2.RandomVerticalFlip(p=0.5),
-    v2.ToDtype(torch.float32, scale=True),
+    v2.ToDtype(torch.float16, scale=True),
     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
@@ -167,6 +165,7 @@ criterion = focal_loss
 optimizer = torch.optim.Adam(efficientnet.parameters(), lr=LEARNING_RATE)
 # scheduler = ExponentialLR(optimizer, gamma=0.7)
 scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=num_additional_epochs)
+scaler = torch.cuda.amp.GradScaler()
 
 
 def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=1, save_checkpoint=True):
@@ -182,8 +181,9 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                 inputs, labels = inputs.to(device), labels.to(device)
                 
                 # forward pass
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                with torch.cuda.amp.autocast():
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
 
                 # backward 
                 optimizer.zero_grad()
