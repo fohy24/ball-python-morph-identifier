@@ -32,7 +32,7 @@ torch.backends.cudnn.allow_tf32 = True
 
 SUBSET = False
 IMAGE_SIZE = 480
-BATCH_SIZE = 8
+BATCH_SIZE = 18
 LEARNING_RATE = 0.00005
 
 LOAD_CHECKPOINT = False
@@ -51,6 +51,7 @@ if SUBSET:
     labels_extended = labels_extended.sample(frac=0.01, random_state=123)
 
 clean_possible_genes = labels_extended.columns.to_list()[7:]
+print(f'Number of labels: {len(clean_possible_genes)}')
 
 train_df, test_df = train_test_split(labels_extended, train_size=0.85, random_state=123)
 print(f'Shape of trainset: {train_df.shape}')
@@ -85,7 +86,7 @@ transform = v2.Compose([
     v2.RandomHorizontalFlip(p=0.5),
     v2.RandomVerticalFlip(p=0.5),
     v2.ToDtype(torch.float16, scale=True),
-    v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    v2.Normalize(mean=[0.6007, 0.5679, 0.5206], std=[0.2411, 0.2392, 0.2479]) # got from `compute_mean_std.ipynb`
     ])
 
 full_dataset = PythonGeneDataset(labels_df=train_df, img_dir='data/img/', transform=transform)
@@ -131,6 +132,7 @@ new_layers = nn.Sequential(
     nn.Dropout(0.5),      
     nn.LazyLinear(num_labels) 
 )
+
 efficientnet.classifier = new_layers
 
 # Implement focal loss for label imbalance
@@ -201,8 +203,9 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                 for inputs, labels in valid_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
 
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
+                    with torch.cuda.amp.autocast():
+                        outputs = model(inputs)
+                        loss = criterion(outputs, labels)
                     valid_loss += loss.item() * inputs.size(0)
 
             valid_loss = valid_loss / len(valid_loader.dataset)
