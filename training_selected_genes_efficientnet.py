@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from PIL import Image
 import os
+import json
 from tqdm import tqdm
 import altair as alt
 alt.data_transformers.enable("vegafusion")
@@ -33,7 +34,7 @@ torch.backends.cudnn.allow_tf32 = True
 SUBSET = False
 IMAGE_SIZE = 480
 BATCH_SIZE = 18
-LEARNING_RATE = 0.00005
+LEARNING_RATE = 0.000005
 
 LOAD_CHECKPOINT = False
 checkpoint_version = 1
@@ -41,7 +42,7 @@ checkpoint_epoch = 20
 num_additional_epochs = 20
 
 SAVE_CHECKPOINT = True
-SAVE_AS_VERSION = 10
+SAVE_AS_VERSION = 11
 
 #########################################################################
 
@@ -86,16 +87,23 @@ transform = v2.Compose([
     v2.RandomHorizontalFlip(p=0.5),
     v2.RandomVerticalFlip(p=0.5),
     v2.ToDtype(torch.float16, scale=True),
-    v2.Normalize(mean=[0.6007, 0.5679, 0.5206], std=[0.2411, 0.2392, 0.2479]) # got from `compute_mean_std.ipynb`
+    # v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
     ])
 
 full_dataset = PythonGeneDataset(labels_df=train_df, img_dir='data/img/', transform=transform)
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using: {device}')
 
 total_size = len(full_dataset)
 train_size = int(0.8 * total_size)
 valid_size = total_size - train_size
-train_indices, valid_indices = torch.utils.data.random_split(np.arange(total_size), [train_size, valid_size])
+generator1 = torch.Generator(device='cpu').manual_seed(42)
+train_indices, valid_indices = torch.utils.data.random_split(
+    np.arange(total_size),
+    [train_size, valid_size],
+    generator=generator1
+    )
 
 
 train_dataset = Subset(full_dataset, train_indices)
@@ -126,8 +134,8 @@ num_labels = len(clean_possible_genes)
 print(f'Number of labels: {num_labels}')
 
 new_layers = nn.Sequential(
-    nn.LazyLinear(1280),  
-    nn.BatchNorm1d(1280),  
+    nn.LazyLinear(2048),  
+    nn.BatchNorm1d(2048),  
     nn.ReLU(),            
     nn.Dropout(0.5),      
     nn.LazyLinear(num_labels) 
@@ -155,9 +163,6 @@ class FocalLoss(nn.Module):
         else:
             return F_loss
         
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f'Using: {device}')
 efficientnet.to(device)
 
 focal_loss = FocalLoss()
@@ -169,8 +174,14 @@ optimizer = torch.optim.Adam(efficientnet.parameters(), lr=LEARNING_RATE)
 scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=num_additional_epochs)
 scaler = torch.cuda.amp.GradScaler()
 
+result = {
+    "epoch": [],
+    "train_loss": [],
+    "valid_loss": [],
+    "lr": []
+}
 
-def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=1, save_checkpoint=True):
+def train_model(model, criterion, optimizer, start_epoch, total_epochs, result_dict, version=1, save_checkpoint=True):
     print(f'Start training - batch size: {BATCH_SIZE} & image size: {IMAGE_SIZE}')
     
     for epoch in range(start_epoch, total_epochs + 1):
@@ -223,10 +234,18 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, version=
                     'train_loss': train_loss,
                     'valid_loss': valid_loss,
                     }, CHECKPOINT_PATH)
+                
+            result_dict["epoch"].append(epoch)
+            result_dict["train_loss"].append(train_loss)
+            result_dict["valid_loss"].append(valid_loss)
+            result_dict["lr"].append(scheduler.get_last_lr()[0])
 
             print(f'Epoch {epoch}/{total_epochs}, Train Loss: {train_loss:.5f}, Valid Loss: {valid_loss:.5f}, Learning rate: {scheduler.get_last_lr()}')
             tepoch.set_postfix(train_loss=train_loss,
                                valid_loss=valid_loss)
+
+        # Save results
+        pd.DataFrame(result).to_csv(f'results/version{SAVE_AS_VERSION}_ImageSize{IMAGE_SIZE}_LR{LEARNING_RATE}.csv', index=False)
 
 
 def get_epoch(LOAD_CHECKPOINT, num_additional_epochs, checkpoint_version, checkpoint_epoch):
@@ -256,26 +275,42 @@ print(f'Starting at Epoch: {start_epoch}, Ending at Epoch: {total_epochs}')
 train_model(efficientnet, criterion, optimizer,
             start_epoch=start_epoch,
             total_epochs=total_epochs,
+            result_dict=result,
             version=SAVE_AS_VERSION,
             save_checkpoint=SAVE_CHECKPOINT)
 
-# # Loss on test set
-# test_dataset = PythonGeneDataset(labels_df=test_df, img_dir='data/img/', transform=transform)
-# test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-# densenet.eval()  # Set model to evaluate mode
+# Loss on test set
+test_dataset = PythonGeneDataset(labels_df=test_df, img_dir='data/img/', transform=transform)
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-# test_loss = 0.0
-# with torch.no_grad():
-#     for inputs, labels in test_loader:
-#         inputs, labels = inputs.to(device), labels.to(device)
+best_model_epoch = result["epoch"][result["valid_loss"].index(min(result["valid_loss"]))]
+best_model_path = f'model/model_v{SAVE_AS_VERSION}_epoch{best_model_epoch}.pt'
+best_model = torch.load(best_model_path, map_location=device)
 
-#         outputs = densenet(inputs)
-#         loss = criterion(outputs, labels)
-#         test_loss += loss.item() * inputs.size(0)
+efficientnet = models.efficientnet_v2_l(weights='EfficientNet_V2_L_Weights.DEFAULT')
+efficientnet.classifier = new_layers
 
-# # Calculate average loss over validation data
-# test_loss = test_loss / len(test_loader.dataset)
-# print(f'Loss on Test set: {test_loss:.5f}')
+efficientnet.load_state_dict(best_model['model_state_dict'])
+epoch = best_model['epoch']
+train_loss = best_model['train_loss']
+valid_loss = best_model['valid_loss']
+print(f'Calculating test loss on model_v{SAVE_AS_VERSION}_epoch{best_model_epoch}...')
+
+efficientnet.half().to(device).eval()
+
+test_loss = 0.0
+with torch.no_grad():
+    for inputs, labels in test_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+        
+        with torch.cuda.amp.autocast():
+            outputs = efficientnet(inputs)
+            loss = criterion(outputs, labels)
+        test_loss += loss.item() * inputs.size(0)
+
+# Calculate average loss over validation data
+test_loss = test_loss / len(test_loader.dataset)
+print(f'Loss on Test set: {test_loss:.5f}')
 
 
