@@ -8,6 +8,7 @@ from torch import nn, optim
 from torchvision import datasets, utils, models
 # from torchinfo import summary
 import torch.nn.functional as F
+from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, ExponentialLR
 import torch.optim as optim
 from torchvision.transforms import v2
@@ -33,16 +34,16 @@ torch.backends.cudnn.allow_tf32 = True
 
 SUBSET = False
 IMAGE_SIZE = 480
-BATCH_SIZE = 18
-LEARNING_RATE = 0.000005
+BATCH_SIZE = 36
+LEARNING_RATE = 0.00004
 
 LOAD_CHECKPOINT = False
 checkpoint_version = 1
 checkpoint_epoch = 20
-num_additional_epochs = 20
+num_additional_epochs = 18
 
 SAVE_CHECKPOINT = True
-SAVE_AS_VERSION = 11
+SAVE_AS_VERSION = "13_1"
 
 #########################################################################
 
@@ -76,7 +77,7 @@ class PythonGeneDataset(Dataset):
         labels = torch.tensor(self.labels_df.iloc[idx, 7:].astype('float32').values)
         
         if self.transform:
-            image = self.transform(image)
+            image = self.transform(image)   
 
         return image, labels
 
@@ -86,8 +87,8 @@ transform = v2.Compose([
     v2.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     v2.RandomHorizontalFlip(p=0.5),
     v2.RandomVerticalFlip(p=0.5),
-    v2.ToDtype(torch.float16, scale=True),
-    # v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
+    v2.ToDtype(torch.float32), # , scale=True
+    v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
     ])
 
 full_dataset = PythonGeneDataset(labels_df=train_df, img_dir='data/img/', transform=transform)
@@ -172,7 +173,7 @@ criterion = focal_loss
 optimizer = torch.optim.Adam(efficientnet.parameters(), lr=LEARNING_RATE)
 # scheduler = ExponentialLR(optimizer, gamma=0.7)
 scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=num_additional_epochs)
-scaler = torch.cuda.amp.GradScaler()
+scaler = GradScaler()
 
 result = {
     "epoch": [],
@@ -194,14 +195,15 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, result_d
                 inputs, labels = inputs.to(device), labels.to(device)
                 
                 # forward pass
-                with torch.cuda.amp.autocast():
+                with autocast(dtype=torch.float16):
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
 
                 # backward 
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
 
                 train_loss += loss.item() * inputs.size(0)
 
@@ -214,7 +216,7 @@ def train_model(model, criterion, optimizer, start_epoch, total_epochs, result_d
                 for inputs, labels in valid_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
 
-                    with torch.cuda.amp.autocast():
+                    with autocast(dtype=torch.float16):
                         outputs = model(inputs)
                         loss = criterion(outputs, labels)
                     valid_loss += loss.item() * inputs.size(0)
@@ -297,14 +299,14 @@ train_loss = best_model['train_loss']
 valid_loss = best_model['valid_loss']
 print(f'Calculating test loss on model_v{SAVE_AS_VERSION}_epoch{best_model_epoch}...')
 
-efficientnet.half().to(device).eval()
+efficientnet.to(device).eval()
 
 test_loss = 0.0
 with torch.no_grad():
     for inputs, labels in test_loader:
         inputs, labels = inputs.to(device), labels.to(device)
         
-        with torch.cuda.amp.autocast():
+        with autocast(dtype=torch.float16):
             outputs = efficientnet(inputs)
             loss = criterion(outputs, labels)
         test_loss += loss.item() * inputs.size(0)
