@@ -37,11 +37,11 @@ checkpoint_epoch = 20
 
 HEAD_WARMUP_EPOCHS = 4
 HEAD_WARMUP_LR = 1e-3
-FINETUNE_EPOCHS = 14
+FINETUNE_EPOCHS = 18
 EARLY_STOPPING_PATIENCE = 5
 
 SAVE_CHECKPOINT = True
-SAVE_AS_VERSION = "14"
+SAVE_AS_VERSION = "15"
 
 #########################################################################
 # Class & function definitions (importable by worker processes)
@@ -205,8 +205,10 @@ if __name__ == '__main__':
     valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
 
+    print(f'Saving as version: {SAVE_AS_VERSION}')
+
     # --- Model ---
-    efficientnet = models.efficientnet_v2_m(weights='EfficientNet_V2_M_Weights.DEFAULT')
+    efficientnet = models.efficientnet_v2_l(weights='EfficientNet_V2_L_Weights.DEFAULT')
     num_labels = len(clean_possible_genes)
 
     new_layers = nn.Sequential(
@@ -415,7 +417,7 @@ if __name__ == '__main__':
 
     best_checkpoint = torch.load(best_model_path, map_location=device)
 
-    efficientnet = models.efficientnet_v2_m(weights='EfficientNet_V2_M_Weights.DEFAULT')
+    efficientnet = models.efficientnet_v2_l(weights='EfficientNet_V2_L_Weights.DEFAULT')
     efficientnet.classifier = nn.Sequential(
         nn.LazyLinear(2048), nn.BatchNorm1d(2048), nn.ReLU(),
         nn.Dropout(0.5), nn.LazyLinear(num_labels)
