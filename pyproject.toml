@@ -1,0 +1,46 @@
+[project]
+name = "ball-python-morph-identifier"
+version = "0.1.0"
+description = "Multi-label image classifier for ball python morph identification"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.1",
+    "numpy>=1.26",
+    "pyarrow>=14.0",
+    "scikit-learn>=1.4",
+    "matplotlib>=3.8",
+    "altair>=5",
+    "vegafusion[embed]>=1.6",
+    "pillow>=10.3",
+    "gcsfs>=2024.3",
+    "torch>=2.7",
+    "torchvision>=0.22",
+    "tqdm>=4.66",
+    "huggingface-hub==0.24.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipykernel>=6.29",
+    "jupyter>=1.0",
+    "torchinfo>=1.8",
+]
+scraper = [
+    "selenium>=4.18",
+    "beautifulsoup4>=4.12",
+]
+
+[tool.uv]
+find-links = [
+    "https://download.pytorch.org/whl/cu128",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
