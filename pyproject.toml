@@ -29,6 +29,7 @@ dev = [
 scraper = [
     "selenium>=4.18",
     "beautifulsoup4>=4.12",
+    "undetected-chromedriver>=3.5",
 ]
 
 [tool.uv]
